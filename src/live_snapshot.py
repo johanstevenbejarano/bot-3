@@ -5,6 +5,12 @@ A diferencia de `data_fetch.py` (pensado para backtesting, con caché en parquet
 falta guardar nada entre corridas ni acumular años de historia — solo los últimos ~120 días
 alcanzan para todos los indicadores en vivo (el lookback más largo es el percentil de ATR, 90
 días). Esto evita la dependencia de pyarrow y evita reescribir un caché que nadie va a releer.
+
+`trust_env=True` en la config de ccxt: el agente en la nube intercepta el tráfico HTTPS con un
+proxy TLS propio (variables `REQUESTS_CA_BUNDLE`/`SSL_CERT_FILE`) — sin este flag, `requests`
+ignora esas variables (ccxt trae `requests_trust_env=False` por defecto) y la verificación de
+certificado falla. Sin efecto en entornos sin ese proxy (el flag solo hace que `requests` lea
+variables de entorno que, si no existen, simplemente no cambian nada).
 """
 from __future__ import annotations
 
@@ -71,7 +77,7 @@ def _add_breakout_indicators(df: pd.DataFrame, cfg=BREAKOUT_STRATEGY) -> pd.Data
 
 def fetch_recent_ohlcv(symbol: str, days: int = LOOKBACK_DAYS) -> pd.DataFrame:
     """Descarga directa (sin caché) de las últimas `days` de velas de 1h."""
-    exchange = ccxt.binance({"enableRateLimit": True})
+    exchange = ccxt.binance({"enableRateLimit": True, "trust_env": True})
     since_ms = int((datetime.now(timezone.utc) - timedelta(days=days)).timestamp() * 1000)
     now_ms = int(datetime.now(timezone.utc).timestamp() * 1000)
 
@@ -92,7 +98,9 @@ def fetch_recent_ohlcv(symbol: str, days: int = LOOKBACK_DAYS) -> pd.DataFrame:
 
 
 def fetch_recent_funding(symbol: str, days: int = LOOKBACK_DAYS) -> pd.Series:
-    exchange = ccxt.binance({"enableRateLimit": True, "options": {"defaultType": "future"}})
+    exchange = ccxt.binance(
+        {"enableRateLimit": True, "trust_env": True, "options": {"defaultType": "future"}}
+    )
     since_ms = int((datetime.now(timezone.utc) - timedelta(days=days)).timestamp() * 1000)
     now_ms = int(datetime.now(timezone.utc).timestamp() * 1000)
 
