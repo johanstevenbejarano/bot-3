@@ -2,9 +2,15 @@
 from __future__ import annotations
 
 import pandas as pd
-from backtesting import Strategy
 
 from src.config import BREAKOUT_STRATEGY, BreakoutConfig
+
+try:
+    from backtesting import Strategy
+except ImportError:
+    # No instalada en el pipeline en vivo (requirements-live.txt la excluye a propósito):
+    # solo hace falta para la clase de estrategia, que ese pipeline nunca usa (solo compute_layers).
+    Strategy = object
 
 
 def compute_layers(df: pd.DataFrame, cfg: BreakoutConfig = BREAKOUT_STRATEGY) -> pd.DataFrame:
