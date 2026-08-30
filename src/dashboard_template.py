@@ -77,6 +77,11 @@ def _asset_card_html(d: dict, delay_ms: int) -> str:
       </div>
 
       {_signal_banner(d)}
+
+      <div class="interpretation">
+        <span class="interp-label">Interpretación de este momento <em>(lectura del presente, no una predicción)</em></span>
+        <p class="interp-text">Interpretación pendiente de esta actualización para {d["symbol"]}.</p>
+      </div>
     </div>"""
 
 
@@ -198,6 +203,11 @@ def render_html(snapshot: dict) -> str:
   .signal-banner.active-long {{ background: var(--good-soft); color: var(--good); animation: fade-up 420ms ease both, pulse-ring 1.8s ease-out 1; }}
   .signal-banner.active-short {{ background: var(--bad-soft); color: var(--bad); animation: fade-up 420ms ease both, pulse-ring 1.8s ease-out 1; }}
   .signal-banner strong {{ font-weight: 600; }}
+
+  .interpretation {{ margin-top: 12px; padding: 12px 14px; border-radius: 8px; background: var(--surface-2); border: 1px solid var(--border); }}
+  .interp-label {{ font-size: 11px; font-weight: 600; letter-spacing: 0.03em; color: var(--text-muted); display: block; margin-bottom: 6px; }}
+  .interp-label em {{ font-weight: 400; font-style: normal; color: var(--text-muted); opacity: 0.8; }}
+  .interp-text {{ font-size: 13px; color: var(--text); margin: 0; line-height: 1.55; }}
 
   .regime-grid {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; }}
   .metric-card {{ background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 16px 18px; transition: border-color 180ms ease, transform 180ms ease; animation: fade-up 420ms ease both; }}

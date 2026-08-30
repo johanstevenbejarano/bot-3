@@ -242,6 +242,24 @@ def main(output_path: str = "dashboard_output.html") -> None:
         print(f"{s}: {d['price_fmt']} | signal_long={d['signal_long']} signal_short={d['signal_short']}")
     print(f"HTML escrito en {output_path}")
 
+    print("\n=== Datos para la sección 'Interpretación' (ver instrucciones de la rutina) ===")
+    for s, d in snap["symbols"].items():
+        funding_txt = (
+            "sin dato"
+            if d["funding_percentile"] != d["funding_percentile"]
+            else f"percentil {d['funding_percentile'] * 100:.0f} de su propia historia reciente"
+        )
+        senal = "LARGO" if d["signal_long"] else "CORTO" if d["signal_short"] else "ninguna"
+        print(f"\n{s}:")
+        print(f"  precio: {d['price_fmt']} | cambio 72h: {d['change_72h']:+.2f}%")
+        print(f"  ADX: {d['adx']:.1f} (por encima de 25 se considera tendencia fuerte)")
+        print(f"  ATR: {d['atr_pct_of_price']:.2f}% del precio (volatilidad relativa)")
+        print(f"  funding rate: {funding_txt}")
+        print(f"  capas tendencia [tendencia_ok, retroceso_ok, volumen_ok]: {d['trend_flags']}")
+        print(f"  capas reversión [toque_banda_ok, rsi_extremo_ok, volumen_ok]: {d['meanrev_flags']}")
+        print(f"  capas breakout [ruptura_canal_ok, volumen_ok]: {d['breakout_flags']}")
+        print(f"  señal de confluencia activa ahora: {senal} ({', '.join(d['active_names']) or 'ninguna estrategia'})")
+
 
 if __name__ == "__main__":
     main()
