@@ -496,8 +496,10 @@ Caminos honestos si se retoma el proyecto:
   problema que BTC/ETH).
 - Otra fuente de datos (on-chain, sentimiento, order flow) en vez de solo precio/volumen — un
   cambio de información de entrada, no de patrón técnico. *(Actualización 2026-08-30: se probó
-  la variante de order flow — open interest / ratio long-short — y se descartó por falta de
-  datos históricos suficientes antes de llegar a backtestear nada. Ver "Línea 5" más abajo.)*
+  la variante de order flow — open interest de Bybit + taker buy/sell ratio de Binance, sustituto
+  del ratio long/short por cuenta, que no tiene historia suficiente en ningún exchange revisado —
+  y se backtesteó con el mismo rigor de las 4 líneas anteriores. No sostiene fuera de muestra.
+  Ver "Línea 5" más abajo.)*
 - **No** volver a probar 4h (descartado explícitamente por el usuario), ni recalibrar dentro de
   las 4 hipótesis ya rechazadas, ni walk-forward sobre las líneas que ya partían peor que
   breakout/BTC en su split único.
@@ -511,57 +513,79 @@ real, en las 4 líneas probadas.
 
 ---
 
-## Línea 5: flujo institucional (open interest + ratio long/short) — descartada por falta de datos, no por resultado (2026-08-30, sesión de automatización del dashboard)
+## Línea 5: flujo institucional (open interest + taker buy/sell ratio) — backtesteada y rechazada (2026-08-30, sesión de automatización del dashboard)
 
 Una de las vías "honestas" señaladas arriba en la Recomendación final ("otra fuente de datos...
-order flow, en vez de solo precio/volumen") — la idea es que el posicionamiento institucional
-(cuánta gente está en largo/corto, cuánto interés abierto hay) podría cargar información que el
-precio y el volumen solos no capturan. A diferencia de las 4 líneas anteriores, acá el proceso se
-cortó **antes** de escribir ninguna estrategia ni backtest, apenas se verificó la disponibilidad
-real de los datos.
+order flow, en vez de solo precio/volumen"). A diferencia de las 4 líneas anteriores, esta pasó
+por dos etapas: primero un intento fallido por falta de datos, después un camino alternativo real
+que sí permitió backtestear con el mismo rigor de siempre.
 
-**Verificación de datos (vía `ccxt`, API pública de Binance Futures):**
-- `fetch_open_interest_history` → `GET /futures/data/openInterestHist`
-- `fapiDataGetGlobalLongShortAccountRatio` → `GET /futures/data/globalLongShortAccountRatio`
+### Etapa 1 — el dato "literal" no tiene historia suficiente en ningún exchange
 
-Ambos probados con BTC/USDT, velas de 1h, pidiendo el máximo (`limit=500`) y también un `since`
-de 400 días atrás para forzar el límite real:
+Verificado vía `ccxt` en Binance (`fetch_open_interest_history`,
+`fapiDataGetGlobalLongShortAccountRatio`), Bybit, Bitget y OKX (`fetchLongShortRatioHistory`):
+**ninguno** retiene más de ~21 días gratis para el ratio long/short por cuenta (Binance y Bybit:
+~21 días; OKX: ~4 días; Bitget: ~1 día). Pedir explícitamente `since` más viejo es rechazado
+directamente por el servidor (`BadRequest: parameter 'startTime' is invalid`, código -1130 en
+Binance) — no es un límite de paginación sorteable como el de OHLCV, es la retención real del
+endpoint. También se revisaron dYdX y Hyperliquid (perpetuos on-chain): ninguno de los dos expone
+esta métrica vía `ccxt`. Con solo ~500-720 barras horarias, ningún walk-forward/CV purgada/
+bootstrap tendría el poder estadístico que usaron las 4 líneas anteriores (la verificación
+bootstrap de la línea de clasificadores ya mostró un intervalo demasiado ancho para concluir nada
+con ~510-519 trades — acá la muestra sería una fracción de eso).
+
+### Etapa 2 — dos sustitutos reales con historia completa
+
+- **Interés abierto de Bybit** (no Binance): mismo endpoint tipo, pero con retención de ~4.9 años
+  (desde sept. 2021) en vez de ~21 días. Usado como proxy de posicionamiento agregado del mercado,
+  aplicado sobre el precio de Binance — mismo criterio que ya usaba `funding_data.py` (una fuente
+  de información distinta no necesita venir del mismo exchange que el precio).
+- **Ratio de compra/venta agresiva (taker)** de Binance: no es el ratio long/short por cuenta,
+  pero es un sustituto legítimo con la MISMA historia completa que ya usa `data_fetch.py` (mismo
+  endpoint de velas, campo "taker buy base volume") — mide presión de compra/venta real en vez de
+  posición declarada, concepto de microestructura de mercado conocido como order flow imbalance.
+
+Código: `orderflow_data.py` (fetch + caché parquet, igual patrón que `funding_data.py`),
+`orderflow_indicators.py` (percentil rodante del OI + z-score rodante del ratio taker, alineados
+sobre el índice de 1h), `orderflow_strategy.py` (`OrderflowConfig` en `config.py`).
+
+**Hipótesis (contraria, "posicionamiento saturado"):** interés abierto en percentil ≥90% de su
+propia historia (mucho apalancamiento acumulado) + flujo de órdenes fuertemente sesgado a un lado
+(z-score del ratio taker por encima/debajo de un umbral) + volumen real → apuesta a que el
+mercado revierte contra esa mayoría (short/long squeeze). 3 capas: OI saturado, desequilibrio de
+flujo extremo, volumen — mismo patrón de confluencia que el resto de las líneas.
+
+**Resultado de la búsqueda de parámetros en TRAIN** (81 combinaciones: percentil de OI 0.85-0.95,
+z-score extremo 1.0-2.0, SL 2-4×ATR, TP 4-8×ATR, exigiendo expectancy positiva en ambos pares,
+4 años de historia — límite real de la retención de Bybit, split 70/30):
 
 ```
-candles returned: 500
-first timestamp: 2026-08-09 10:00:00+00:00
-last timestamp:  2026-08-30 05:00:00+00:00   -> 20.8 días de historia
+Mejor config: oi_extreme_percentile=0.95, imbalance_extreme_z=1.5, sl_atr_mult=2.0, tp_atr_mult=6.0
+
+TRAIN:
+  BTC/USDT: 34 trades, win rate 35.3%, expectancy +0.0085%
+  ETH/USDT: 57 trades, win rate 28.1%, expectancy +0.024%
+
+TEST:
+  BTC/USDT: 25 trades, win rate 20.0%, expectancy -0.452%
+  ETH/USDT:  2 trades, win rate  0.0%, expectancy -1.864%   <- muestra insuficiente además
 ```
 
-Al pedir explícitamente 400 días atrás (`since`), Binance no devuelve menos datos silenciosamente
-— **rechaza el pedido**: `BadRequest: parameter 'startTime' is invalid` (código -1130). No es un
-límite de paginación que se pueda sortear iterando con `since`/`limit` como se hizo con OHLCV
-(`data_fetch.py`) — es una retención real de ~30 días en el servidor de Binance para estos dos
-endpoints específicos.
+**No sostiene fuera de muestra.** La "mejor" config de todo el grid ya arrancaba con expectancy
+casi cero en train (0.0085%, 0.024% — apenas por encima del punto de corte, no una señal fuerte),
+y en test se revierte a claramente negativo en ambos pares — mismo patrón que las 4 líneas
+anteriores. ETH además da apenas 2 trades en test, ni siquiera alcanza el mínimo para confiar en
+el número aunque hubiera sido positivo.
 
-**Por qué esto descarta la línea sin necesidad de backtestear:**
-las 4 líneas anteriores tuvieron entre 2 y 9 años de velas de 1h (decenas de miles de barras) para
-poder hacer walk-forward con múltiples regímenes de mercado, validación cruzada purgada con folds
-independientes, y —el paso que terminó revirtiendo el resultado más prometedor de toda la
-sesión— un intervalo de confianza bootstrap con suficiente poder estadístico. Esa verificación
-bootstrap ya mostró un intervalo demasiado ancho para concluir nada con ~510-519 trades por
-símbolo (varios años de datos). Con apenas ~500-720 barras horarias totales (20-30 días), el
-número de operaciones que arrojaría cualquier regla sería una fracción de eso — el intervalo de
-confianza sería aún más ancho, casi con certeza inútil. Forzar un backtest de 20-30 días y
-reportarlo como si tuviera el mismo estándar que las líneas anteriores sería presentar un
-resultado anecdótico como si fuera riguroso — exactamente lo que esta sesión completa se propuso
-evitar desde el principio.
+**Conclusión: la línea de flujo institucional tampoco tiene ventaja demostrable en BTC/USDT y
+ETH/USDT 1h en este período**, ni usando el sustituto de taker buy/sell ratio combinado con
+interés abierto de Bybit. Se detuvo acá (sin escalar a walk-forward completo ni bootstrap) porque
+ya falló en el primer filtro barato (test fuera de muestra) — misma disciplina de "no invertir en
+validación cara sobre algo que ya falló en la barata" aplicada en las líneas 3 y 4.
 
-**Conclusión: no se implementó ningún código de estrategia/backtest para esta línea.** La
-limitación es de disponibilidad de datos gratuitos, no de la hipótesis en sí — sigue siendo una
-pregunta abierta, no una hipótesis refutada como las 4 anteriores.
-
-**Caminos si se quiere retomar esto en el futuro:**
-- Un proveedor de datos de pago con historia larga de posicionamiento/open interest (ej.
-  Coinglass, Glassnode, o una suscripción de datos de Binance más allá de la API pública) — deja
-  de ser "datos públicos gratuitos", que es la premisa del resto del proyecto.
-- Recolección progresiva propia: guardar estos dos datos cada hora desde ahora (podría
-  aprovecharse la misma rutina automática del dashboard, con un `git commit` periódico o similar
-  para persistir la serie) y esperar varios meses/años antes de tener suficiente historia para
-  backtestear con el mismo rigor que las líneas 1-4. Es un cambio de "backtest inmediato" a
-  "recolección para backtestear después" — no hay atajo.
+**Nota sobre qué quedó sin probar:** el ratio long/short "literal" por cuenta sigue sin
+respuesta — no se pudo backtestear con datos gratuitos de ningún exchange revisado. El resultado
+de esta línea es sobre el sustituto (taker buy/sell ratio + open interest de Bybit), no sobre esa
+métrica específica. Caminos si se quiere ese dato en particular en el futuro: un proveedor de
+pago (Coinglass, Glassnode, etc.), o recolección propia hacia adelante (guardarlo cada hora desde
+ahora y esperar meses/años antes de poder backtestear con rigor).

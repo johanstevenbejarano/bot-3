@@ -212,6 +212,32 @@ FUNDING_STRATEGY = FundingConfig()
 
 
 @dataclass(frozen=True)
+class OrderflowConfig:
+    """Estrategia contraria de "posicionamiento saturado": cuando el interés abierto (Bybit,
+    único exchange con historia larga gratis para este dato -- ver FINDINGS.md "Línea 5") está en
+    un percentil alto de su propia historia (mucho apalancamiento acumulado en el mercado) Y el
+    flujo de órdenes está fuertemente sesgado a un lado (compras o ventas agresivas dominan, via
+    taker buy/sell ratio de Binance), el mercado queda vulnerable a un movimiento violento en
+    contra de esa mayoría (short/long squeeze) -- apuesta a la reversión, no a la continuación.
+    Hipótesis distinta de funding rate (esa mira el costo de financiamiento, no el volumen de
+    interés abierto ni el flujo de órdenes real).
+    """
+
+    oi_lookback_periods: int = 2160  # ~90 días en velas de 1h, igual que el filtro de régimen
+    oi_extreme_percentile: float = 0.90  # top 10% de su propia historia reciente
+    imbalance_lookback_periods: int = 720  # ~30 días -- ventana para el z-score del taker ratio
+    imbalance_extreme_z: float = 1.5  # desvíos estándar respecto a su propia media reciente
+    atr_period: int = 14
+    sl_atr_mult: float = 3.0
+    tp_atr_mult: float = 6.0
+    backtest_risk_per_trade: float = 0.01
+    volume: VolumeConfig = field(default_factory=VolumeConfig)
+
+
+ORDERFLOW_STRATEGY = OrderflowConfig()
+
+
+@dataclass(frozen=True)
 class MLConfig:
     """Clasificador (regresión logística, regularizada) sobre un set de features técnicas
     combinadas — en vez de una regla fija tipo 'si A y B y C', deja que el modelo aprenda los
