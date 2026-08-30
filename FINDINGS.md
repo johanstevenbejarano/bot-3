@@ -771,3 +771,58 @@ bootstrap -- ni vale la pena escalar validación cuando el resultado ya es negat
 paso. Con esta van 9 hipótesis probadas (5 basadas en precio/volumen/derivados/flujo de órdenes,
 más funding, sentimiento, macro y on-chain como fuentes de información externas), todas
 rechazadas salvo la estacionalidad de las 20:00 UTC (real pero no operable por costos).
+
+---
+
+## Línea 10: arbitraje de funding rate (cash-and-carry) — categoría distinta (neutral al mercado), también rechazada (2026-08-30, misma sesión)
+
+A diferencia de las 9 líneas anteriores (todas apuestas direccionales: largo o corto según una
+condición), esta es una **estrategia neutral al mercado**: comprar spot y vender el perpetuo al
+mismo tiempo cobra el pago de funding (los largos le pagan a los cortos cuando el funding es
+positivo) sin depender de si el precio sube o baja -- el riesgo de precio de ambas patas se
+cancela, salvo por el cambio en la "base" (diferencia spot-perpetuo) entre la entrada y la
+salida, que es el riesgo real de esta estrategia. Código nuevo (no reutiliza `backtesting.py`,
+la mecánica de dos patas no encaja en ese marco): `funding_arb_data.py` (precio del perpetuo,
+mismo patrón de caché que `data_fetch.py`), `funding_arb_strategy.py` (lógica pura de episodios
+y P&L, 8 tests).
+
+**Regla:** entra en la posición cuando el funding supera un umbral, sale cuando cae a cero o
+menos. Retorno de cada episodio = cambio en la base + funding cobrado durante la ventana - costo
+de las 4 operaciones (abrir spot+perp, cerrar spot+perp, 0.1% cada una).
+
+**Resultado de la búsqueda de umbral en TRAIN** (6 umbrales de entrada, exigiendo al menos 15
+episodios y retorno medio por episodio positivo en ambos pares, 5 años de historia -- limitado
+por el arranque de los datos de perpetuo/funding de Binance en 2021, split 70/30):
+
+```
+umbral=0.0000  (cualquier funding positivo): BTC 263 episodios, -0.272%  | ETH 267 episodios, -0.267%
+umbral=0.00005:                              BTC 169 episodios, -0.204%  | ETH 177 episodios, -0.202%
+umbral=0.0001:                               BTC   6 episodios, +2.790%  | ETH   8 episodios, +2.436%
+umbral=0.0002:                               BTC   5 episodios, +3.098%  | ETH   7 episodios, +2.724%
+umbral=0.0003:                               BTC   4 episodios, +3.810%  | ETH   6 episodios, +2.887%
+umbral=0.0005:                               BTC   4 episodios, +2.799%  | ETH   5 episodios, +3.351%
+```
+
+**Patrón honesto y revelador:** en los umbrales con muestra suficiente (169-263 episodios), el
+resultado es claramente negativo -- el funding rate típico no alcanza a cubrir el costo de las 4
+operaciones (0.4% en total) más el riesgo de que la base se mueva en contra. En los umbrales
+altos aparecen retornos grandes y atractivos (+2.4% a +3.8% por episodio), pero con apenas 4-8
+episodios en 3.5 años de train -- muy por debajo del piso de 15 episodios que este proyecto exige
+para confiar en un número. Es exactamente el tipo de trampa de muestra chica que el resto de la
+sesión se dedicó a evitar (ver el bootstrap de la línea de DXY): un puñado de eventos de funding
+extremo, posiblemente concentrados en uno o dos episodios de mercado inusuales, no alcanza para
+concluir nada.
+
+**Conclusión: ningún umbral pasa el filtro mínimo de esta sesión** (retorno positivo Y muestra
+suficiente a la vez). No se escaló a test ni a bootstrap porque ya falló en el primer filtro. El
+resultado no dice "el funding arbitrage no funciona en general" (es una estrategia real que
+fondos institucionales operan) -- dice que, con solo 2 símbolos y ~3.5 años de datos de
+perpetuos de Binance, no hay evidencia confiable de que sea rentable después de costos en este
+período específico. No se implementó como señal del dashboard.
+
+**Nota técnica:** se corrigió un bug real durante la validación (documentado por disciplina, no
+para inflar el conteo de líneas): el precio del perpetuo de Binance empieza 7 horas después que
+el primer evento de funding disponible, lo que generaba un episodio con `NaN` que arruinaba el
+promedio completo de BTC. `backtest_funding_arb` ahora descarta explícitamente los episodios sin
+precio disponible en vez de dejar que un solo dato faltante contamine el resultado agregado --
+cubierto por un test de regresión específico.
