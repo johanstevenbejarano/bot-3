@@ -495,7 +495,9 @@ Caminos honestos si se retoma el proyecto:
   correlacionados del documento original — SOL, BNB, XRP — probablemente comparten el mismo
   problema que BTC/ETH).
 - Otra fuente de datos (on-chain, sentimiento, order flow) en vez de solo precio/volumen — un
-  cambio de información de entrada, no de patrón técnico.
+  cambio de información de entrada, no de patrón técnico. *(Actualización 2026-08-30: se probó
+  la variante de order flow — open interest / ratio long-short — y se descartó por falta de
+  datos históricos suficientes antes de llegar a backtestear nada. Ver "Línea 5" más abajo.)*
 - **No** volver a probar 4h (descartado explícitamente por el usuario), ni recalibrar dentro de
   las 4 hipótesis ya rechazadas, ni walk-forward sobre las líneas que ya partían peor que
   breakout/BTC en su split único.
@@ -506,3 +508,60 @@ Ninguna métrica de win rate/expectancy se reportó sin venir de un backtest rea
 configuración se declaró "buena" sin pasar por la separación train/test — exactamente lo que
 pide `contexto proyecto trading.md`. El resultado no es el que se esperaba, pero es el resultado
 real, en las 4 líneas probadas.
+
+---
+
+## Línea 5: flujo institucional (open interest + ratio long/short) — descartada por falta de datos, no por resultado (2026-08-30, sesión de automatización del dashboard)
+
+Una de las vías "honestas" señaladas arriba en la Recomendación final ("otra fuente de datos...
+order flow, en vez de solo precio/volumen") — la idea es que el posicionamiento institucional
+(cuánta gente está en largo/corto, cuánto interés abierto hay) podría cargar información que el
+precio y el volumen solos no capturan. A diferencia de las 4 líneas anteriores, acá el proceso se
+cortó **antes** de escribir ninguna estrategia ni backtest, apenas se verificó la disponibilidad
+real de los datos.
+
+**Verificación de datos (vía `ccxt`, API pública de Binance Futures):**
+- `fetch_open_interest_history` → `GET /futures/data/openInterestHist`
+- `fapiDataGetGlobalLongShortAccountRatio` → `GET /futures/data/globalLongShortAccountRatio`
+
+Ambos probados con BTC/USDT, velas de 1h, pidiendo el máximo (`limit=500`) y también un `since`
+de 400 días atrás para forzar el límite real:
+
+```
+candles returned: 500
+first timestamp: 2026-08-09 10:00:00+00:00
+last timestamp:  2026-08-30 05:00:00+00:00   -> 20.8 días de historia
+```
+
+Al pedir explícitamente 400 días atrás (`since`), Binance no devuelve menos datos silenciosamente
+— **rechaza el pedido**: `BadRequest: parameter 'startTime' is invalid` (código -1130). No es un
+límite de paginación que se pueda sortear iterando con `since`/`limit` como se hizo con OHLCV
+(`data_fetch.py`) — es una retención real de ~30 días en el servidor de Binance para estos dos
+endpoints específicos.
+
+**Por qué esto descarta la línea sin necesidad de backtestear:**
+las 4 líneas anteriores tuvieron entre 2 y 9 años de velas de 1h (decenas de miles de barras) para
+poder hacer walk-forward con múltiples regímenes de mercado, validación cruzada purgada con folds
+independientes, y —el paso que terminó revirtiendo el resultado más prometedor de toda la
+sesión— un intervalo de confianza bootstrap con suficiente poder estadístico. Esa verificación
+bootstrap ya mostró un intervalo demasiado ancho para concluir nada con ~510-519 trades por
+símbolo (varios años de datos). Con apenas ~500-720 barras horarias totales (20-30 días), el
+número de operaciones que arrojaría cualquier regla sería una fracción de eso — el intervalo de
+confianza sería aún más ancho, casi con certeza inútil. Forzar un backtest de 20-30 días y
+reportarlo como si tuviera el mismo estándar que las líneas anteriores sería presentar un
+resultado anecdótico como si fuera riguroso — exactamente lo que esta sesión completa se propuso
+evitar desde el principio.
+
+**Conclusión: no se implementó ningún código de estrategia/backtest para esta línea.** La
+limitación es de disponibilidad de datos gratuitos, no de la hipótesis en sí — sigue siendo una
+pregunta abierta, no una hipótesis refutada como las 4 anteriores.
+
+**Caminos si se quiere retomar esto en el futuro:**
+- Un proveedor de datos de pago con historia larga de posicionamiento/open interest (ej.
+  Coinglass, Glassnode, o una suscripción de datos de Binance más allá de la API pública) — deja
+  de ser "datos públicos gratuitos", que es la premisa del resto del proyecto.
+- Recolección progresiva propia: guardar estos dos datos cada hora desde ahora (podría
+  aprovecharse la misma rutina automática del dashboard, con un `git commit` periódico o similar
+  para persistir la serie) y esperar varios meses/años antes de tener suficiente historia para
+  backtestear con el mismo rigor que las líneas 1-4. Es un cambio de "backtest inmediato" a
+  "recolección para backtestear después" — no hay atajo.
