@@ -282,6 +282,28 @@ MACRO_STRATEGY = MacroConfig()
 
 
 @dataclass(frozen=True)
+class OnchainConfig:
+    """Estrategia contraria basada en direcciones activas on-chain (BTC vía blockchain.info, ETH
+    vía Etherscan, ambos gratis con historia diaria completa): cuando la actividad real de la red
+    está en un extremo de su propia historia reciente (uso inusualmente alto o bajo), apuesta a
+    que el precio revierte, confirmado por vela de rechazo y volumen real -- misma estructura que
+    `funding_strategy.py`/`sentiment_strategy.py`/`macro_strategy.py`, primera fuente on-chain
+    probada en la sesión.
+    """
+
+    lookback_periods: int = 180  # ~180 días de historia diaria de direcciones activas
+    extreme_percentile: float = 0.90  # top/bottom 10% de su propia historia reciente
+    atr_period: int = 14
+    sl_atr_mult: float = 3.0
+    tp_atr_mult: float = 6.0
+    backtest_risk_per_trade: float = 0.01
+    volume: VolumeConfig = field(default_factory=VolumeConfig)
+
+
+ONCHAIN_STRATEGY = OnchainConfig()
+
+
+@dataclass(frozen=True)
 class MLConfig:
     """Clasificador (regresión logística, regularizada) sobre un set de features técnicas
     combinadas — en vez de una regla fija tipo 'si A y B y C', deja que el modelo aprenda los

@@ -745,3 +745,29 @@ estadístico correcto.** Sirve como recordatorio de por qué el paso de bootstra
 no solo cuando "se ve sospechoso" — este resultado, mirado solo por expectancy agregada y split
 train/test, se habría reportado como el único éxito de las 8 líneas probadas. No se implementó
 como señal del dashboard.
+
+---
+
+## Línea 9: on-chain (direcciones activas) — rechazada en el filtro más barato (2026-08-30, misma sesión)
+
+Hipótesis contraria: direcciones activas on-chain (actividad real de la red, no precio/volumen)
+en un extremo de su propia historia reciente apuesta a que el precio revierte, confirmado por
+vela de rechazo y volumen real. Primera fuente on-chain probada en la sesión. Fuentes: BTC vía
+`api.blockchain.info` (gratis, sin clave, histórico diario completo), ETH vía la exportación CSV
+pública de Etherscan (gratis, sin clave, histórico diario completo desde 2015) -- cada símbolo
+con su propia cadena y su propia fuente, a diferencia de funding/sentimiento/DXY (una sola serie
+compartida por ambos). Código: `onchain_data.py`, `onchain_indicators.py`, `onchain_strategy.py`
+(`OnchainConfig` en `config.py`).
+
+**Resultado de la búsqueda de parámetros en TRAIN** (108 combinaciones: lookback 90-270 días,
+extremo 0.85-0.95, SL 2-4×ATR, TP 4-8×ATR, exigiendo expectancy positiva en ambos pares, 8 años
+de historia, split 70/30): **0/108 combinaciones viables.** Ninguna combinación logró expectancy
+positiva en BTC y ETH a la vez, ni siquiera en train -- mismo patrón de rechazo inmediato que las
+líneas 3 y 4 (reversión, breakout) al principio de la sesión.
+
+**Conclusión: la actividad on-chain (medida como direcciones activas) tampoco tiene ventaja
+demostrable en este período.** Se detuvo en el filtro más barato posible, sin necesitar test ni
+bootstrap -- ni vale la pena escalar validación cuando el resultado ya es negativo en el primer
+paso. Con esta van 9 hipótesis probadas (5 basadas en precio/volumen/derivados/flujo de órdenes,
+más funding, sentimiento, macro y on-chain como fuentes de información externas), todas
+rechazadas salvo la estacionalidad de las 20:00 UTC (real pero no operable por costos).
