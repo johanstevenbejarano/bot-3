@@ -589,3 +589,63 @@ de esta línea es sobre el sustituto (taker buy/sell ratio + open interest de By
 métrica específica. Caminos si se quiere ese dato en particular en el futuro: un proveedor de
 pago (Coinglass, Glassnode, etc.), o recolección propia hacia adelante (guardarlo cada hora desde
 ahora y esperar meses/años antes de poder backtestear con rigor).
+
+---
+
+## Línea 6: estacionalidad (hora del día / día de la semana) — el único hallazgo real de toda la sesión, pero no operable (2026-08-30, misma sesión)
+
+A diferencia de las líneas 1-5 (todas del tipo "regla de entrada con SL/TP vía backtesting.py"),
+acá se probó la hipótesis directamente como pregunta estadística: ¿el retorno de la vela
+siguiente tiene un sesgo según la hora del día o el día de la semana en que ocurre? No hace falta
+ningún dato nuevo — 8 años de OHLCV ya cacheados alcanzan.
+
+**Método** (`seasonality_analysis.py`, `seasonality_validate.py`): retorno de cierre a cierre de
+la vela siguiente, agrupado por hora (0-23) y por día de la semana (0-6), con el mismo bootstrap
+de `ml_significance.py` ya testeado. Con 24+7=31 grupos probados, un IC al 95% sin corregir daría
+~1.55 "positivos" esperados por puro azar — por eso el criterio de éxito exige que el MISMO grupo
+excluya cero, con el MISMO signo, en BTC y ETH a la vez (split train/test 70/30, candidatos
+buscados solo en train, igual que las líneas anteriores).
+
+**Candidatos encontrados en TRAIN:** hora 20:00 UTC, hora 21:00 UTC, día viernes — los tres
+excluían cero con el mismo signo en ambos símbolos.
+
+**Verificación en TEST (nunca tocado hasta este punto):**
+
+```
+20:00 UTC: sostiene dirección Y sigue significativo en test
+  train -> BTC +0.043% [0.008, 0.079] | ETH +0.046% [0.005, 0.089]
+  test  -> BTC +0.042% [0.012, 0.072] | ETH +0.080% [0.034, 0.125]
+
+21:00 UTC: sostiene dirección pero YA NO es significativo en test (ETH: CI [-0.002, 0.086], incluye cero)
+viernes:   sostiene dirección pero YA NO es significativo en test (ambos símbolos ~0%, sin efecto)
+```
+
+**21:00 UTC y viernes quedan descartados** como ruido de la muestra de train — exactamente el
+comportamiento que se esperaba filtrar con el split train/test.
+
+**20:00 UTC es distinto: es el primer resultado de toda la sesión que sostiene fuera de
+muestra.** No es una casualidad de train — el efecto se reencontró, con el mismo signo y
+significativo, en datos que el descubrimiento nunca vio. Explicación económica plausible (no solo
+estadística): 20:00 UTC coincide con el cierre del mercado bursátil de EE. UU. en horario de
+verano, un solapamiento de mesas de trading institucionales documentado en la literatura de
+microestructura de mercado cripto.
+
+**Pero no es operable así de simple.** El efecto (~0.046% promedio, el menor de los dos símbolos)
+es más chico que el costo de una operación completa ida y vuelta en Binance spot (0.1% de
+comisión taker por lado × 2 = 0.2%) — la comisión sola es ~4 veces el tamaño del efecto. Operar
+esto tal cual con una entrada/salida simple da pérdida neta esperada, no ganancia.
+
+**Conclusión: hallazgo real y confirmado estadísticamente, rechazado por motivos económicos, no
+estadísticos** — una categoría distinta de las 5 líneas anteriores (que fallaron el chequeo
+estadístico mismo). No se implementó como señal del dashboard porque haría perder plata en
+promedio después de comisiones tal como está.
+
+**Caminos si se quiere seguir esto en el futuro** (ninguno implementado, quedan como ideas):
+- Probar si una orden maker (comisión típicamente menor, a veces ~0%) en vez de taker cierra la
+  brecha — introduce riesgo de que la orden no se ejecute, no es gratis en otro sentido.
+- Probar una ventana de retorno más larga que 1 hora (ej. mantener varias horas alrededor de las
+  20:00 UTC) para ver si el efecto acumulado supera el costo sin necesitar múltiples operaciones.
+- Mostrarlo en el dashboard como **dato de contexto informativo**, no como señal de entrada — ej.
+  "históricamente, 20:00 UTC (cierre bursátil EE. UU.) mostró un sesgo alcista pequeño y
+  consistente, aunque no supera comisiones de trading" — es información real, honesta, y
+  consistente con el resto del panel, sin prometer una ventaja operable.
