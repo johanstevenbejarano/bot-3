@@ -29,6 +29,7 @@ from src.config import BREAKOUT_STRATEGY, FUNDING_STRATEGY, MEANREV_STRATEGY, ST
 from src.dashboard_render import compute_risk_levels, format_price, make_sparkline_svg, pct_change
 from src.funding_indicators import align_funding_to_1h, compute_funding_percentile
 from src.meanrev_strategy import compute_layers as meanrev_layers
+from src.ntfy_notify import send_ntfy_alert
 from src.strategy import compute_layers as trend_layers
 from src.ta_free_indicators import adx as ta_free_adx
 from src.ta_free_indicators import atr as ta_free_atr
@@ -210,6 +211,28 @@ def _fetch_funding_best_effort(symbol: str) -> pd.Series:
         return pd.Series(dtype=float, index=pd.DatetimeIndex([], tz="UTC"))
 
 
+def _build_alert(symbol: str, d: dict) -> tuple[str, str]:
+    """Título/mensaje de alerta -- describe qué condiciones se cumplieron, nunca qué va a pasar
+    (misma regla que la sección "Interpretación": estado actual, no predicción ni recomendación).
+    """
+    direction = "LARGO" if d["signal_long"] else "CORTO"
+    strategies = ", ".join(d["active_names"]) or "una estrategia"
+    title = f"{symbol}: confluencia {direction} activa ({strategies})"
+    message = (
+        f"{symbol} a {d['price_fmt']} — se cumplieron las 3 condiciones de: {strategies}. "
+        "Esto describe las condiciones ahora mismo, no es una predicción ni una recomendación "
+        "de comprar o vender."
+    )
+    return title, message
+
+
+def _notify_active_signals(symbols_data: dict) -> None:
+    for s, d in symbols_data.items():
+        if d["signal_long"] or d["signal_short"]:
+            title, message = _build_alert(s, d)
+            send_ntfy_alert(title, message, tags=["rotating_light"])
+
+
 def build_snapshot() -> dict:
     raw_by_symbol = {s: fetch_recent_ohlcv(s) for s in SYMBOLS}
     funding_by_symbol = {s: _fetch_funding_best_effort(s) for s in SYMBOLS}
@@ -217,6 +240,7 @@ def build_snapshot() -> dict:
     symbols_data = {
         s: compute_symbol_snapshot(s, raw_by_symbol[s], funding_by_symbol[s]) for s in SYMBOLS
     }
+    _notify_active_signals(symbols_data)
 
     btc_ret = raw_by_symbol["BTC/USDT"]["close"].pct_change().tail(720)
     eth_ret = raw_by_symbol["ETH/USDT"]["close"].pct_change().tail(720)
