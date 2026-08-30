@@ -649,3 +649,44 @@ promedio después de comisiones tal como está.
   "históricamente, 20:00 UTC (cierre bursátil EE. UU.) mostró un sesgo alcista pequeño y
   consistente, aunque no supera comisiones de trading" — es información real, honesta, y
   consistente con el resto del panel, sin prometer una ventaja operable.
+
+---
+
+## Línea 7: sentimiento (Fear & Greed Index) — rechazada (2026-08-30, misma sesión)
+
+Hipótesis contraria clásica: cuando el índice Fear & Greed (alternative.me, sentimiento agregado
+de todo el mercado cripto, gratis, historia diaria completa desde 2018-02-01, sin límite de
+retención) está en miedo extremo o codicia extrema, el mercado revierte — confirmado por vela de
+rechazo y volumen real. Misma estructura que `funding_strategy.py` (3 capas: sentimiento extremo,
+vela de confirmación, volumen), fuente de información distinta (sentimiento declarado, no
+derivado de precio/volumen/derivados). Código: `sentiment_data.py`, `sentiment_indicators.py`,
+`sentiment_strategy.py` (`SentimentConfig` en `config.py`).
+
+**Resultado de la búsqueda de parámetros en TRAIN** (144 combinaciones: umbral de miedo 10-25,
+umbral de codicia 75-90, SL 2-4×ATR, TP 4-8×ATR, exigiendo expectancy positiva en ambos pares,
+8 años de historia, split 70/30):
+
+```
+Mejor config: miedo<=10, codicia>=90, sl_atr_mult=3.0, tp_atr_mult=6.0
+
+TRAIN:
+  BTC/USDT: 65 trades, expectancy +0.526%
+  ETH/USDT: 62 trades, expectancy +1.583%
+
+TEST:
+  BTC/USDT: 20 trades, expectancy +0.547%   <- sostiene
+  ETH/USDT: 22 trades, expectancy -0.174%   <- se revierte
+```
+
+**No sostiene fuera de muestra.** A diferencia de las líneas 1-6, acá TRAIN fue el más
+prometedor de toda la sesión (expectancy claramente positiva en ambos pares, no un valor apenas
+por encima de cero) — y BTC de hecho sostiene esa dirección en test. Pero ETH se revierte a
+negativo, y el criterio de esta sesión siempre exigió que la MISMA config funcione en ambos pares
+a la vez, no en uno solo por separado (evita elegir una config que solo funciona en un activo por
+azar — la misma razón por la que se rechazó aislar BTC en el "Chequeo BTC-solo" de más arriba).
+
+**Conclusión: la línea de sentimiento tampoco tiene ventaja demostrable en ambos pares a la vez
+en este período.** Se detuvo acá (sin escalar a walk-forward ni bootstrap) por la misma
+disciplina de "no invertir en validación cara sobre algo que ya falló en la barata" — aunque acá
+el fallo es más ajustado que en las líneas 1-5 (BTC solo sí hubiera sostenido), no cambia la
+conclusión bajo el estándar de "ambos pares" aplicado en toda la sesión.

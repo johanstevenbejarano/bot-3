@@ -238,6 +238,28 @@ ORDERFLOW_STRATEGY = OrderflowConfig()
 
 
 @dataclass(frozen=True)
+class SentimentConfig:
+    """Estrategia contraria basada en el Fear & Greed Index (alternative.me, sentimiento agregado
+    de todo el mercado cripto, no específico de BTC o ETH): cuando el índice está en miedo extremo
+    (mercado sobrevendido por pánico) o codicia extrema (sobrecomprado por euforia), apuesta a que
+    revierte, confirmado por vela de rechazo y volumen real -- misma estructura que
+    `funding_strategy.py`, fuente de información distinta (sentimiento declarado vía encuesta, no
+    derivado de precio/volumen/derivados).
+    """
+
+    extreme_fear_threshold: float = 20.0  # <= esto = miedo extremo
+    extreme_greed_threshold: float = 80.0  # >= esto = codicia extrema
+    atr_period: int = 14
+    sl_atr_mult: float = 3.0
+    tp_atr_mult: float = 6.0
+    backtest_risk_per_trade: float = 0.01
+    volume: VolumeConfig = field(default_factory=VolumeConfig)
+
+
+SENTIMENT_STRATEGY = SentimentConfig()
+
+
+@dataclass(frozen=True)
 class MLConfig:
     """Clasificador (regresión logística, regularizada) sobre un set de features técnicas
     combinadas — en vez de una regla fija tipo 'si A y B y C', deja que el modelo aprenda los
