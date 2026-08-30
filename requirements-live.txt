@@ -2,7 +2,11 @@
 # programado en la nube. Deliberadamente NO incluye scikit-learn/optuna/backtesting/pyarrow:
 # esos solo hacen falta para backtesting (ver requirements.txt), no para calcular las señales en
 # vivo, e instalarlos cada hora sería tiempo perdido.
+#
+# Tampoco incluye `ta`: su setup.py heredado falla al compilar en el sandbox limpio del agente
+# en la nube (AttributeError: install_layout, incompatibilidad con setuptools moderno — ver
+# FINDINGS.md/historial de la rutina). Los indicadores que antes venían de `ta` se calculan ahora
+# con pandas puro en src/ta_free_indicators.py, sin ninguna dependencia frágil.
 ccxt==4.5.76
 numpy==2.4.6
 pandas==3.0.5
-ta==0.11.0

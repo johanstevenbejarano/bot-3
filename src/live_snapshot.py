@@ -13,19 +13,60 @@ from datetime import datetime, timedelta, timezone
 import ccxt
 import pandas as pd
 
-from src.breakout_indicators import add_breakout_indicators
 from src.breakout_strategy import compute_layers as breakout_layers
 from src.config import BREAKOUT_STRATEGY, FUNDING_STRATEGY, MEANREV_STRATEGY, STRATEGY
 from src.dashboard_render import compute_risk_levels, format_price, make_sparkline_svg, pct_change
 from src.funding_indicators import align_funding_to_1h, compute_funding_percentile
-from src.indicators import add_indicators
-from src.meanrev_indicators import add_meanrev_indicators
 from src.meanrev_strategy import compute_layers as meanrev_layers
 from src.strategy import compute_layers as trend_layers
+from src.ta_free_indicators import adx as ta_free_adx
+from src.ta_free_indicators import atr as ta_free_atr
+from src.ta_free_indicators import bollinger_bands, ema, rsi
 
 SYMBOLS = ("BTC/USDT", "ETH/USDT")
 LOOKBACK_DAYS = 120
 SPARKLINE_HOURS = 72
+
+
+def _add_trend_indicators(df: pd.DataFrame, cfg=STRATEGY) -> pd.DataFrame:
+    """Equivalente sin `ta` de `src.indicators.add_indicators` (mismas columnas/fórmulas)."""
+    out = df.copy()
+    out["ema_fast"] = ema(out["close"], cfg.trend.ema_fast)
+    out["ema_slow"] = ema(out["close"], cfg.trend.ema_slow)
+    out["adx"] = ta_free_adx(out["high"], out["low"], out["close"], cfg.trend.adx_period)
+    out["atr"] = ta_free_atr(out["high"], out["low"], out["close"], cfg.risk.atr_period)
+    out["volume_ma"] = out["volume"].rolling(window=cfg.volume.volume_ma_period).mean()
+    out["swing_low"] = out["low"].rolling(window=cfg.risk.swing_lookback).min()
+    out["swing_high"] = out["high"].rolling(window=cfg.risk.swing_lookback).max()
+
+    atr_pct = out["atr"] / out["close"]
+    out["atr_percentile"] = atr_pct.rolling(
+        window=cfg.regime.lookback_bars, min_periods=cfg.regime.lookback_bars // 2
+    ).rank(pct=True)
+
+    return out.dropna()
+
+
+def _add_meanrev_indicators(df: pd.DataFrame, cfg=MEANREV_STRATEGY) -> pd.DataFrame:
+    """Equivalente sin `ta` de `src.meanrev_indicators.add_meanrev_indicators`."""
+    out = df.copy()
+    out["bb_basis"], out["bb_upper"], out["bb_lower"] = bollinger_bands(
+        out["close"], cfg.bollinger.period, cfg.bollinger.num_std
+    )
+    out["rsi"] = rsi(out["close"], cfg.rsi.period)
+    out["atr"] = ta_free_atr(out["high"], out["low"], out["close"], cfg.risk.atr_period)
+    out["volume_ma"] = out["volume"].rolling(window=cfg.volume.volume_ma_period).mean()
+    return out.dropna()
+
+
+def _add_breakout_indicators(df: pd.DataFrame, cfg=BREAKOUT_STRATEGY) -> pd.DataFrame:
+    """Equivalente sin `ta` de `src.breakout_indicators.add_breakout_indicators`."""
+    out = df.copy()
+    out["donchian_high"] = out["high"].rolling(window=cfg.donchian.period).max().shift(1)
+    out["donchian_low"] = out["low"].rolling(window=cfg.donchian.period).min().shift(1)
+    out["atr"] = ta_free_atr(out["high"], out["low"], out["close"], cfg.risk.atr_period)
+    out["volume_ma"] = out["volume"].rolling(window=cfg.volume.volume_ma_period).mean()
+    return out.dropna()
 
 
 def fetch_recent_ohlcv(symbol: str, days: int = LOOKBACK_DAYS) -> pd.DataFrame:
@@ -76,11 +117,11 @@ def compute_symbol_snapshot(symbol: str, raw: pd.DataFrame, funding_rate: pd.Ser
     last = raw.iloc[-1]
     price = float(last["close"])
 
-    trend_df = trend_layers(add_indicators(raw, STRATEGY), STRATEGY)
+    trend_df = trend_layers(_add_trend_indicators(raw, STRATEGY), STRATEGY)
     t = trend_df.iloc[-1]
-    mr_df = meanrev_layers(add_meanrev_indicators(raw, MEANREV_STRATEGY), MEANREV_STRATEGY)
+    mr_df = meanrev_layers(_add_meanrev_indicators(raw, MEANREV_STRATEGY), MEANREV_STRATEGY)
     m = mr_df.iloc[-1]
-    bo_df = breakout_layers(add_breakout_indicators(raw, BREAKOUT_STRATEGY), BREAKOUT_STRATEGY)
+    bo_df = breakout_layers(_add_breakout_indicators(raw, BREAKOUT_STRATEGY), BREAKOUT_STRATEGY)
     b = bo_df.iloc[-1]
 
     funding_pct_series = compute_funding_percentile(funding_rate, FUNDING_STRATEGY.lookback_periods)

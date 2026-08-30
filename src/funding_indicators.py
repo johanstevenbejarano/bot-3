@@ -4,7 +4,6 @@ estrategia contraria de funding extremo.
 from __future__ import annotations
 
 import pandas as pd
-import ta
 
 from src.config import FundingConfig
 from src.funding_data import fetch_funding_rate
@@ -29,6 +28,8 @@ def align_funding_to_1h(df_1h: pd.DataFrame, funding_percentile: pd.Series) -> p
 
 
 def add_funding_indicators(df_1h: pd.DataFrame, symbol: str, cfg: FundingConfig, years: int) -> pd.DataFrame:
+    import ta  # solo hace falta para backtesting, no para el pipeline en vivo (ver ta_free_indicators.py)
+
     funding_rate = fetch_funding_rate(symbol, years=years)
     funding_percentile = compute_funding_percentile(funding_rate, cfg.lookback_periods)
 
