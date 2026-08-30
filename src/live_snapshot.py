@@ -6,18 +6,23 @@ falta guardar nada entre corridas ni acumular años de historia — solo los úl
 alcanzan para todos los indicadores en vivo (el lookback más largo es el percentil de ATR, 90
 días). Esto evita la dependencia de pyarrow y evita reescribir un caché que nadie va a releer.
 
-`trust_env=True` en la config de ccxt: el agente en la nube intercepta el tráfico HTTPS con un
-proxy TLS propio (variables `REQUESTS_CA_BUNDLE`/`SSL_CERT_FILE`) — sin este flag, `requests`
-ignora esas variables (ccxt trae `requests_trust_env=False` por defecto) y la verificación de
-certificado falla. Sin efecto en entornos sin ese proxy (el flag solo hace que `requests` lea
-variables de entorno que, si no existen, simplemente no cambian nada).
+Sobre `_patch_requests_ca_bundle_for_sandbox`: el agente en la nube intercepta el tráfico HTTPS
+con un proxy TLS propio y expone su certificado vía `REQUESTS_CA_BUNDLE`/`SSL_CERT_FILE`. ccxt,
+sin embargo, siempre le pasa a `requests` un `verify=True` (nunca un path propio) en cada
+request (ver `Exchange.fetch`) -- por eso `trust_env` de requests no sirve acá: `requests` solo
+consulta esas variables de entorno cuando `verify` no es exactamente `True`. La única forma de
+que la verificación use el certificado del proxy es reapuntar directamente el bundle por
+defecto de `requests` (`requests.adapters.DEFAULT_CA_BUNDLE_PATH`, ver `cert_verify` en esa
+librería). Sin efecto fuera de ese sandbox (si esas variables no existen, no cambia nada).
 """
 from __future__ import annotations
 
+import os
 from datetime import datetime, timedelta, timezone
 
 import ccxt
 import pandas as pd
+import requests.adapters
 
 from src.breakout_strategy import compute_layers as breakout_layers
 from src.config import BREAKOUT_STRATEGY, FUNDING_STRATEGY, MEANREV_STRATEGY, STRATEGY
@@ -32,6 +37,16 @@ from src.ta_free_indicators import bollinger_bands, ema, rsi
 SYMBOLS = ("BTC/USDT", "ETH/USDT")
 LOOKBACK_DAYS = 120
 SPARKLINE_HOURS = 72
+
+
+def _patch_requests_ca_bundle_for_sandbox() -> None:
+    """Ver docstring del módulo. No-op si el sandbox no expone su propio CA bundle."""
+    ca_bundle = os.environ.get("REQUESTS_CA_BUNDLE") or os.environ.get("SSL_CERT_FILE")
+    if ca_bundle and os.path.isfile(ca_bundle):
+        requests.adapters.DEFAULT_CA_BUNDLE_PATH = ca_bundle
+
+
+_patch_requests_ca_bundle_for_sandbox()
 
 
 def _add_trend_indicators(df: pd.DataFrame, cfg=STRATEGY) -> pd.DataFrame:
@@ -77,7 +92,7 @@ def _add_breakout_indicators(df: pd.DataFrame, cfg=BREAKOUT_STRATEGY) -> pd.Data
 
 def fetch_recent_ohlcv(symbol: str, days: int = LOOKBACK_DAYS) -> pd.DataFrame:
     """Descarga directa (sin caché) de las últimas `days` de velas de 1h."""
-    exchange = ccxt.binance({"enableRateLimit": True, "trust_env": True})
+    exchange = ccxt.binance({"enableRateLimit": True})
     since_ms = int((datetime.now(timezone.utc) - timedelta(days=days)).timestamp() * 1000)
     now_ms = int(datetime.now(timezone.utc).timestamp() * 1000)
 
@@ -98,9 +113,7 @@ def fetch_recent_ohlcv(symbol: str, days: int = LOOKBACK_DAYS) -> pd.DataFrame:
 
 
 def fetch_recent_funding(symbol: str, days: int = LOOKBACK_DAYS) -> pd.Series:
-    exchange = ccxt.binance(
-        {"enableRateLimit": True, "trust_env": True, "options": {"defaultType": "future"}}
-    )
+    exchange = ccxt.binance({"enableRateLimit": True, "options": {"defaultType": "future"}})
     since_ms = int((datetime.now(timezone.utc) - timedelta(days=days)).timestamp() * 1000)
     now_ms = int(datetime.now(timezone.utc).timestamp() * 1000)
 
