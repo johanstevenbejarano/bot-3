@@ -1,0 +1,8 @@
+# Dependencias mínimas para src/live_snapshot.py — el pipeline que corre cada hora en el agente
+# programado en la nube. Deliberadamente NO incluye scikit-learn/optuna/backtesting/pyarrow:
+# esos solo hacen falta para backtesting (ver requirements.txt), no para calcular las señales en
+# vivo, e instalarlos cada hora sería tiempo perdido.
+ccxt==4.5.76
+numpy==2.4.6
+pandas==3.0.5
+ta==0.11.0

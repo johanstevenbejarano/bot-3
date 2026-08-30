@@ -4,3 +4,4 @@ __pycache__/
 .pytest_cache/
 data/ohlcv/*.parquet
 results/*.json
+dashboard_output.html
