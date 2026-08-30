@@ -187,9 +187,22 @@ def compute_symbol_snapshot(symbol: str, raw: pd.DataFrame, funding_rate: pd.Ser
     }
 
 
+def _fetch_funding_best_effort(symbol: str) -> pd.Series:
+    """El funding rate es solo un dato de contexto (la estrategia basada en él no mostró ventaja
+    validada, ver FINDINGS.md) -- si el endpoint de futuros falla (ej. geo-bloqueo de Binance en
+    algunos entornos), el dashboard debe seguir funcionando sin ese dato puntual, no romperse
+    entero. `compute_funding_percentile`/`align_funding_to_1h` ya manejan una serie vacía sin
+    error (terminan en NaN, que la plantilla muestra como "s/d").
+    """
+    try:
+        return fetch_recent_funding(symbol)
+    except Exception:
+        return pd.Series(dtype=float, index=pd.DatetimeIndex([], tz="UTC"))
+
+
 def build_snapshot() -> dict:
     raw_by_symbol = {s: fetch_recent_ohlcv(s) for s in SYMBOLS}
-    funding_by_symbol = {s: fetch_recent_funding(s) for s in SYMBOLS}
+    funding_by_symbol = {s: _fetch_funding_best_effort(s) for s in SYMBOLS}
 
     symbols_data = {
         s: compute_symbol_snapshot(s, raw_by_symbol[s], funding_by_symbol[s]) for s in SYMBOLS
