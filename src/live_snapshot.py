@@ -92,7 +92,12 @@ def _add_breakout_indicators(df: pd.DataFrame, cfg=BREAKOUT_STRATEGY) -> pd.Data
 
 def fetch_recent_ohlcv(symbol: str, days: int = LOOKBACK_DAYS) -> pd.DataFrame:
     """Descarga directa (sin caché) de las últimas `days` de velas de 1h."""
-    exchange = ccxt.binance({"enableRateLimit": True})
+    exchange = ccxt.binance({"enableRateLimit": True, "timeout": 30000})
+    # api.binance.com devuelve 451 (bloqueo por ubicación/tipo de IP -- ver "Eligibility" en sus
+    # términos) desde IPs de centros de datos en la nube. data-api.binance.vision es el espejo
+    # público de solo-lectura que Binance ofrece justamente para esto (sin ese bloqueo). Solo
+    # cubre datos de mercado (klines/exchangeInfo), no cuentas ni trading.
+    exchange.urls["api"]["public"] = "https://data-api.binance.vision/api/v3"
     since_ms = int((datetime.now(timezone.utc) - timedelta(days=days)).timestamp() * 1000)
     now_ms = int(datetime.now(timezone.utc).timestamp() * 1000)
 
@@ -113,7 +118,9 @@ def fetch_recent_ohlcv(symbol: str, days: int = LOOKBACK_DAYS) -> pd.DataFrame:
 
 
 def fetch_recent_funding(symbol: str, days: int = LOOKBACK_DAYS) -> pd.Series:
-    exchange = ccxt.binance({"enableRateLimit": True, "options": {"defaultType": "future"}})
+    exchange = ccxt.binance(
+        {"enableRateLimit": True, "timeout": 30000, "options": {"defaultType": "future"}}
+    )
     since_ms = int((datetime.now(timezone.utc) - timedelta(days=days)).timestamp() * 1000)
     now_ms = int(datetime.now(timezone.utc).timestamp() * 1000)
 
