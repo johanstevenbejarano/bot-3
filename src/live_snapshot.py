@@ -26,7 +26,7 @@ import requests.adapters
 
 from src.breakout_strategy import compute_layers as breakout_layers
 from src.config import BREAKOUT_STRATEGY, FUNDING_STRATEGY, MEANREV_STRATEGY, STRATEGY
-from src.dashboard_render import compute_risk_levels, format_price, make_sparkline_svg, pct_change
+from src.dashboard_render import compute_strategy_risk, format_price, make_sparkline_svg, pct_change
 from src.funding_indicators import align_funding_to_1h, compute_funding_percentile
 from src.meanrev_strategy import compute_layers as meanrev_layers
 from src.ntfy_notify import send_ntfy_alert
@@ -171,7 +171,25 @@ def compute_symbol_snapshot(symbol: str, raw: pd.DataFrame, funding_rate: pd.Ser
     closes_72h = raw["close"].tail(SPARKLINE_HOURS).round(2).tolist()
     spark = make_sparkline_svg(closes_72h)
     change_72h = pct_change(closes_72h)
-    risk = compute_risk_levels(price, atr, BREAKOUT_STRATEGY.risk.sl_atr_mult, BREAKOUT_STRATEGY.risk.tp_atr_mult)
+
+    # Cada estrategia tiene su propia calibración de SL/TP (ver FINDINGS.md) -- mostrar un solo
+    # SL/TP genérico (antes: siempre el de breakout) era incorrecto para las otras dos.
+    strategy_risks = [
+        compute_strategy_risk(
+            "Tendencia", price, float(t["atr"]), STRATEGY.risk.sl_atr_mult, STRATEGY.risk.tp_atr_mult
+        ),
+        compute_strategy_risk(
+            "Reversión",
+            price,
+            float(m["atr"]),
+            MEANREV_STRATEGY.risk.sl_atr_mult,
+            tp_mult=None,
+            dynamic_tp=float(m["bb_basis"]),
+        ),
+        compute_strategy_risk(
+            "Breakout", price, float(b["atr"]), BREAKOUT_STRATEGY.risk.sl_atr_mult, BREAKOUT_STRATEGY.risk.tp_atr_mult
+        ),
+    ]
 
     return {
         "symbol": symbol,
@@ -182,7 +200,7 @@ def compute_symbol_snapshot(symbol: str, raw: pd.DataFrame, funding_rate: pd.Ser
         "atr_pct_of_price": atr / price * 100,
         "funding_percentile": funding_percentile,
         "sparkline": spark,
-        "risk": risk,
+        "strategy_risks": strategy_risks,
         "trend_flags": [bool(t["trend_up_ok"]) or bool(t["trend_dn_ok"]), bool(t["pullback_up_ok"]) or bool(t["pullback_dn_ok"]), bool(t["volume_ok"])],
         "meanrev_flags": [bool(m["touched_lower"]) or bool(m["touched_upper"]), bool(m["rsi_oversold"]) or bool(m["rsi_overbought"]), bool(m["volume_ok"])],
         "breakout_flags": [bool(b["breakout_up"]) or bool(b["breakout_down"]), bool(b["volume_ok"])],

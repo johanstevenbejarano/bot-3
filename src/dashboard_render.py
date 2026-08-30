@@ -70,6 +70,48 @@ def compute_risk_levels(price: float, atr: float, sl_mult: float, tp_mult: float
     )
 
 
+@dataclass(frozen=True)
+class StrategyRisk:
+    """SL/TP de referencia de UNA estrategia puntual -- cada una tiene su propia calibración,
+    no tiene sentido mostrar un solo SL/TP genérico para las tres (ver FINDINGS.md: tendencia
+    usa 3x/8x ATR, breakout 3x/6x, reversión un SL de 1.5x ATR pero un TP dinámico en la media
+    móvil, no un múltiplo fijo)."""
+
+    name: str
+    sl_dist: float  # distancia en precio (siempre positiva) del entry al SL, usada por la calculadora de tamaño de posición
+    long_sl: float
+    long_tp: float
+    short_sl: float
+    short_tp: float
+    tp_is_dynamic: bool  # True para reversión: el TP es la media móvil actual, no un múltiplo de ATR fijo
+
+
+def compute_strategy_risk(
+    name: str, price: float, atr: float, sl_mult: float, tp_mult: float | None, dynamic_tp: float | None = None
+) -> StrategyRisk:
+    """`tp_mult=None` + `dynamic_tp` para estrategias con objetivo dinámico (reversión a la
+    media): el TP no es un múltiplo de ATR, es el nivel de la media móvil en este momento."""
+    sl_dist = sl_mult * atr
+    if tp_mult is not None:
+        long_tp = price + tp_mult * atr
+        short_tp = price - tp_mult * atr
+        tp_is_dynamic = False
+    else:
+        long_tp = dynamic_tp
+        short_tp = dynamic_tp
+        tp_is_dynamic = True
+
+    return StrategyRisk(
+        name=name,
+        sl_dist=sl_dist,
+        long_sl=price - sl_dist,
+        long_tp=long_tp,
+        short_sl=price + sl_dist,
+        short_tp=short_tp,
+        tp_is_dynamic=tp_is_dynamic,
+    )
+
+
 def layers_met_fraction(flags: list[bool]) -> str:
     """[True, False, True] -> '2/3'."""
     return f"{sum(1 for f in flags if f)}/{len(flags)}"

@@ -4,6 +4,7 @@ insertan los valores dinámicos.
 """
 from __future__ import annotations
 
+import json
 from datetime import datetime
 
 from src.dashboard_render import format_price, layers_met_fraction
@@ -85,22 +86,43 @@ def _asset_card_html(d: dict, delay_ms: int) -> str:
     </div>"""
 
 
-def _risk_row_html(d: dict) -> str:
-    r = d["risk"]
-    return f"""        <tr>
+def _risk_rows_html(d: dict) -> str:
+    """Una fila por estrategia (cada una con su propia calibración de SL/TP) -- ver
+    StrategyRisk en dashboard_render.py. La de Reversión marca su TP como dinámico."""
+    rows = []
+    for r in d["strategy_risks"]:
+        tp_long = f"{format_price(r.long_tp)}<span class='dyn-mark'>*</span>" if r.tp_is_dynamic else format_price(r.long_tp)
+        tp_short = f"{format_price(r.short_tp)}<span class='dyn-mark'>*</span>" if r.tp_is_dynamic else format_price(r.short_tp)
+        rows.append(f"""        <tr>
           <td>{d["symbol"]}</td>
+          <td>{r.name}</td>
           <td>{d["price_fmt"]}</td>
           <td class="sl">{format_price(r.long_sl)}</td>
-          <td class="tp">{format_price(r.long_tp)}</td>
+          <td class="tp">{tp_long}</td>
           <td class="sl">{format_price(r.short_sl)}</td>
-          <td class="tp">{format_price(r.short_tp)}</td>
-        </tr>"""
+          <td class="tp">{tp_short}</td>
+        </tr>""")
+    return "\n".join(rows)
+
+
+def _calculator_data_js(symbols: list[dict]) -> str:
+    """Datos que la calculadora de tamaño de posición necesita, embebidos como JS -- todo el
+    cálculo corre en el navegador del usuario, nada de su capital sale de la página."""
+    data = {
+        d["symbol"]: {
+            "price": d["price"],
+            "strategies": {r.name: {"sl_dist": r.sl_dist} for r in d["strategy_risks"]},
+        }
+        for d in symbols
+    }
+    return json.dumps(data, ensure_ascii=False)
 
 
 def render_html(snapshot: dict) -> str:
     symbols = list(snapshot["symbols"].values())
     asset_cards = "\n".join(_asset_card_html(d, i * 70) for i, d in enumerate(symbols))
-    risk_rows = "\n".join(_risk_row_html(d) for d in symbols)
+    risk_rows = "\n".join(_risk_rows_html(d) for d in symbols)
+    calc_data_js = _calculator_data_js(symbols)
 
     correlation = snapshot["correlation"]
     avg_adx = sum(d["adx"] for d in symbols) / len(symbols)
@@ -220,12 +242,24 @@ def render_html(snapshot: dict) -> str:
   .gauge-fill {{ height: 100%; border-radius: 4px; background: var(--accent); width: 0; transition: width 900ms cubic-bezier(0.22, 1, 0.36, 1) 150ms; }}
   .gauge-fill.warn {{ background: var(--warn); }}
 
-  .risk-table {{ width: 100%; border-collapse: collapse; }}
-  .risk-table th {{ text-align: left; font-size: 11px; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; color: var(--text-muted); padding: 0 12px 10px; border-bottom: 1px solid var(--border); }}
-  .risk-table td {{ padding: 12px; font-family: var(--font-mono); font-size: 13.5px; font-variant-numeric: tabular-nums; border-bottom: 1px solid var(--border); }}
+  .card {{ overflow-x: auto; }}
+  .risk-table {{ width: 100%; min-width: 560px; border-collapse: collapse; }}
+  .risk-table th {{ text-align: left; font-size: 11px; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; color: var(--text-muted); padding: 0 12px 10px; border-bottom: 1px solid var(--border); white-space: nowrap; }}
+  .risk-table td {{ padding: 12px; font-family: var(--font-mono); font-size: 13.5px; font-variant-numeric: tabular-nums; border-bottom: 1px solid var(--border); white-space: nowrap; }}
   .risk-table tr:last-child td {{ border-bottom: none; }}
   .risk-table .sl {{ color: var(--bad); }}
   .risk-table .tp {{ color: var(--good); }}
+  .dyn-mark {{ color: var(--accent); font-weight: 700; }}
+  .risk-table-note {{ padding: 10px 12px 2px; font-size: 12px; color: var(--text-muted); }}
+
+  .calculator .calc-intro {{ font-size: 12.5px; color: var(--text-muted); margin: 0 0 16px; line-height: 1.5; }}
+  .calc-grid {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 14px; margin-bottom: 4px; }}
+  .calc-grid label {{ display: flex; flex-direction: column; gap: 6px; font-size: 12px; color: var(--text-muted); }}
+  .calc-grid select, .calc-grid input {{ font: inherit; font-family: var(--font-mono); font-size: 13.5px; color: var(--text); background: var(--surface-2); border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px; }}
+  .calc-grid select:focus, .calc-grid input:focus {{ outline: 2px solid var(--accent); outline-offset: 1px; }}
+  .calc-result {{ margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--border); }}
+  .calc-result .stat-line span:last-child {{ font-weight: 500; color: var(--text); }}
+  .calc-leverage-note {{ margin-top: 10px; padding: 8px 10px; border-radius: 6px; background: var(--warn-soft); color: var(--warn); font-size: 12px; }}
 
   details.methodology {{ margin-top: 40px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); overflow: hidden; }}
   details.methodology summary {{ cursor: pointer; padding: 16px 20px; font-size: 13.5px; font-weight: 600; color: var(--text-muted); list-style: none; display: flex; align-items: center; gap: 8px; }}
@@ -292,11 +326,39 @@ def render_html(snapshot: dict) -> str:
   <div class="section-label">Niveles de riesgo de referencia</div>
   <div class="card">
     <table class="risk-table">
-      <thead><tr><th>Par</th><th>Precio</th><th>SL largo</th><th>TP largo</th><th>SL corto</th><th>TP corto</th></tr></thead>
+      <thead><tr><th>Par</th><th>Estrategia</th><th>Precio</th><th>SL largo</th><th>TP largo</th><th>SL corto</th><th>TP corto</th></tr></thead>
       <tbody>
 {risk_rows}
       </tbody>
     </table>
+    <div class="risk-table-note"><span class="dyn-mark">*</span> Reversión no usa un TP fijo por ATR: el objetivo es la media móvil actual, que se mueve con el mercado.</div>
+  </div>
+
+  <div class="section-label">Calculadora de tamaño de posición</div>
+  <div class="card calculator">
+    <p class="calc-intro">Esto es matemática de gestión de riesgo, no una predicción — sirve
+    para cualquier operación, tenga o no ventaja comprobada la señal que la originó. Todo el
+    cálculo ocurre en tu navegador: tu capital nunca se envía a ningún lado.</p>
+    <div class="calc-grid">
+      <label>Par
+        <select id="calc-symbol"></select>
+      </label>
+      <label>Estrategia (define la distancia al SL)
+        <select id="calc-strategy"></select>
+      </label>
+      <label>Capital disponible (USD)
+        <input id="calc-capital" type="number" min="0" step="any" placeholder="ej. 1000">
+      </label>
+      <label>Riesgo máximo por operación (%)
+        <input id="calc-risk-pct" type="number" min="0" max="100" step="any" value="1">
+      </label>
+    </div>
+    <div id="calc-result" class="calc-result" hidden>
+      <div class="stat-line"><span>Dinero en riesgo si toca el SL</span><span id="calc-risk-amount">—</span></div>
+      <div class="stat-line"><span>Tamaño de posición sugerido</span><span id="calc-position-value">—</span></div>
+      <div class="stat-line"><span>Unidades aproximadas</span><span id="calc-units">—</span></div>
+      <div id="calc-leverage-note" class="calc-leverage-note" hidden></div>
+    </div>
   </div>
 
   <details class="methodology">
@@ -363,6 +425,82 @@ def render_html(snapshot: dict) -> str:
   }}
   tickFreshness();
   setInterval(tickFreshness, 30000);
+
+  // Calculadora de tamaño de posición -- todo corre acá, en el navegador; el capital que
+  // escribe el usuario nunca sale de esta página.
+  var CALC_DATA = {calc_data_js};
+  var symSel = document.getElementById("calc-symbol");
+  var stratSel = document.getElementById("calc-strategy");
+  var capitalInput = document.getElementById("calc-capital");
+  var riskPctInput = document.getElementById("calc-risk-pct");
+  var resultBox = document.getElementById("calc-result");
+  var riskAmountEl = document.getElementById("calc-risk-amount");
+  var positionValueEl = document.getElementById("calc-position-value");
+  var unitsEl = document.getElementById("calc-units");
+  var leverageNoteEl = document.getElementById("calc-leverage-note");
+
+  if (symSel && CALC_DATA) {{
+    Object.keys(CALC_DATA).forEach(function (sym) {{
+      var opt = document.createElement("option");
+      opt.value = sym;
+      opt.textContent = sym;
+      symSel.appendChild(opt);
+    }});
+
+    function populateStrategies() {{
+      var sym = CALC_DATA[symSel.value];
+      stratSel.innerHTML = "";
+      if (!sym) return;
+      Object.keys(sym.strategies).forEach(function (name) {{
+        var opt = document.createElement("option");
+        opt.value = name;
+        opt.textContent = name;
+        stratSel.appendChild(opt);
+      }});
+    }}
+
+    function fmtUsd(n) {{
+      return "$" + n.toLocaleString("en-US", {{ minimumFractionDigits: 2, maximumFractionDigits: 2 }});
+    }}
+
+    function recalc() {{
+      var sym = CALC_DATA[symSel.value];
+      var strategy = sym ? sym.strategies[stratSel.value] : null;
+      var capital = parseFloat(capitalInput.value);
+      var riskPct = parseFloat(riskPctInput.value);
+
+      if (!sym || !strategy || !(capital > 0) || !(riskPct > 0) || !(strategy.sl_dist > 0)) {{
+        resultBox.hidden = true;
+        return;
+      }}
+
+      var riskAmount = capital * (riskPct / 100);
+      var units = riskAmount / strategy.sl_dist;
+      var positionValue = units * sym.price;
+
+      riskAmountEl.textContent = fmtUsd(riskAmount);
+      positionValueEl.textContent = fmtUsd(positionValue);
+      unitsEl.textContent = units.toLocaleString("en-US", {{ maximumFractionDigits: 6 }});
+
+      if (positionValue > capital) {{
+        var mult = (positionValue / capital).toFixed(2);
+        leverageNoteEl.textContent = "Esto supera tu capital disponible — implicaria apalancamiento de ~" + mult + "x para mantener ese riesgo con este SL. Considera bajar el % de riesgo o aceptar un SL mas ajustado.";
+        leverageNoteEl.hidden = false;
+      }} else {{
+        leverageNoteEl.hidden = true;
+      }}
+
+      resultBox.hidden = false;
+    }}
+
+    populateStrategies();
+    recalc();
+    symSel.addEventListener("change", function () {{ populateStrategies(); recalc(); }});
+    [stratSel, capitalInput, riskPctInput].forEach(function (el) {{
+      el.addEventListener("input", recalc);
+      el.addEventListener("change", recalc);
+    }});
+  }}
 
   var details = document.querySelector("details.methodology");
   if (details) {{

@@ -2,6 +2,7 @@ import pytest
 
 from src.dashboard_render import (
     compute_risk_levels,
+    compute_strategy_risk,
     format_price,
     layers_met_fraction,
     make_sparkline_svg,
@@ -54,6 +55,29 @@ def test_compute_risk_levels_symmetric_around_price():
     assert levels.long_tp == 116
     assert levels.short_sl == 106
     assert levels.short_tp == 84
+
+
+def test_compute_strategy_risk_with_fixed_atr_target():
+    risk = compute_strategy_risk("Tendencia", price=100, atr=2, sl_mult=3, tp_mult=8)
+
+    assert risk.name == "Tendencia"
+    assert risk.sl_dist == 6
+    assert risk.long_sl == 94
+    assert risk.long_tp == 116
+    assert risk.short_sl == 106
+    assert risk.short_tp == 84
+    assert risk.tp_is_dynamic is False
+
+
+def test_compute_strategy_risk_with_dynamic_target():
+    risk = compute_strategy_risk("Reversión", price=100, atr=2, sl_mult=1.5, tp_mult=None, dynamic_tp=97.5)
+
+    assert risk.sl_dist == 3
+    assert risk.long_sl == 97
+    assert risk.short_sl == 103
+    assert risk.long_tp == 97.5
+    assert risk.short_tp == 97.5
+    assert risk.tp_is_dynamic is True
 
 
 def test_layers_met_fraction():
