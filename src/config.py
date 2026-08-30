@@ -260,6 +260,28 @@ SENTIMENT_STRATEGY = SentimentConfig()
 
 
 @dataclass(frozen=True)
+class MacroConfig:
+    """Estrategia contraria basada en el índice del dólar (DXY, Yahoo Finance, gratis, historia
+    diaria completa): cuando el dólar está en un percentil extremo de su propia historia reciente
+    (dólar inusualmente fuerte o débil), apuesta a que el cripto revierte en sentido contrario,
+    confirmado por vela de rechazo y volumen real -- misma estructura que `funding_strategy.py` y
+    `sentiment_strategy.py`, fuente de información genuinamente distinta (mercados tradicionales,
+    no cripto).
+    """
+
+    lookback_periods: int = 180  # ~180 días de historia diaria del DXY
+    extreme_percentile: float = 0.90  # top/bottom 10% de su propia historia reciente
+    atr_period: int = 14
+    sl_atr_mult: float = 3.0
+    tp_atr_mult: float = 6.0
+    backtest_risk_per_trade: float = 0.01
+    volume: VolumeConfig = field(default_factory=VolumeConfig)
+
+
+MACRO_STRATEGY = MacroConfig()
+
+
+@dataclass(frozen=True)
 class MLConfig:
     """Clasificador (regresión logística, regularizada) sobre un set de features técnicas
     combinadas — en vez de una regla fija tipo 'si A y B y C', deja que el modelo aprenda los

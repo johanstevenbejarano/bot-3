@@ -690,3 +690,58 @@ en este período.** Se detuvo acá (sin escalar a walk-forward ni bootstrap) por
 disciplina de "no invertir en validación cara sobre algo que ya falló en la barata" — aunque acá
 el fallo es más ajustado que en las líneas 1-5 (BTC solo sí hubiera sostenido), no cambia la
 conclusión bajo el estándar de "ambos pares" aplicado en toda la sesión.
+
+---
+
+## Línea 8: macro (índice del dólar, DXY) — parecía la mejor de la sesión, cae con bootstrap (2026-08-30, misma sesión)
+
+Hipótesis contraria: el índice del dólar (DXY, vía la API pública de gráficos de Yahoo Finance,
+gratis, historia diaria completa desde 2017) en un extremo de su propia historia reciente
+(dólar inusualmente fuerte o débil) apuesta a que el cripto revierte en sentido contrario,
+confirmado por vela de rechazo y volumen real. Primera fuente de información de mercados
+tradicionales probada en toda la sesión (todo lo anterior era cripto: precio, volumen,
+derivados, sentimiento cripto). Código: `macro_data.py`, `macro_indicators.py`,
+`macro_strategy.py` (`MacroConfig` en `config.py`).
+
+**Resultado de la búsqueda de parámetros en TRAIN** (108 combinaciones: lookback de percentil
+90-270 días, extremo 0.85-0.95, SL 2-4×ATR, TP 4-8×ATR, exigiendo expectancy positiva en ambos
+pares, 8 años de historia, split 70/30):
+
+```
+Mejor config: lookback=270, extreme_percentile=0.85, sl_atr_mult=4.0, tp_atr_mult=8.0
+
+TRAIN:
+  BTC/USDT: 226 trades, expectancy +0.762%, Sharpe 0.52
+  ETH/USDT: 257 trades, expectancy +0.721%, Sharpe 0.39
+
+TEST:
+  BTC/USDT: 109 trades, expectancy +0.213%   <- sostiene
+  ETH/USDT:  95 trades, expectancy +1.395%   <- sostiene, incluso mejor que en train
+```
+
+**Esta fue la única línea de toda la sesión que sostuvo fuera de muestra en AMBOS pares a la
+vez** con el criterio de expectancy agregada — mejor resultado que cualquiera de las líneas 1-7,
+incluidos los dos walk-forwards positivos de BTC que en su momento parecieron el hallazgo más
+sólido de la sesión.
+
+**Por eso mismo se aplicó la misma escalada de rigor que se le aplicó a esa línea de
+clasificadores cuando pasó lo mismo** (`ml_tree_optuna_significance_check.py`): un resultado
+agregado positivo no alcanza, hay que ver si el intervalo de confianza bootstrap sobre los
+retornos trade-por-trade EN TEST excluye cero. Se corrió (`macro_significance_check.py`,
+reutilizando `ml_significance.bootstrap_mean_ci`, ya testeado):
+
+```
+BTC/USDT (TEST, 109 trades): media 0.213%, IC95% [-0.710%, 1.205%] -> incluye cero
+ETH/USDT (TEST,  95 trades): media 1.395%, IC95% [-0.193%, 3.038%] -> incluye cero
+```
+
+**Ambos intervalos incluyen cero.** Exactamente el mismo desenlace que la línea de
+clasificadores: la expectancy agregada positiva no es evidencia suficiente cuando la muestra de
+trades (95-109 en test) es chica en relación a la variabilidad de los retornos — el intervalo de
+confianza es demasiado ancho para distinguir esta ganancia de pura casualidad de muestra.
+
+**Conclusión: el resultado más prometedor de toda la sesión tampoco resiste el escrutinio
+estadístico correcto.** Sirve como recordatorio de por qué el paso de bootstrap importa siempre,
+no solo cuando "se ve sospechoso" — este resultado, mirado solo por expectancy agregada y split
+train/test, se habría reportado como el único éxito de las 8 líneas probadas. No se implementó
+como señal del dashboard.
